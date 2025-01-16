@@ -10,12 +10,22 @@ struct Backend {
 #[tower_lsp::async_trait]
 impl LanguageServer for Backend {
     async fn initialize(&self, _: InitializeParams) -> Result<InitializeResult> {
-        Ok(InitializeResult::default())
+        Ok(InitializeResult {
+            capabilities: ServerCapabilities {
+                hover_provider: Some(HoverProviderCapability::Simple(true)),
+                completion_provider: Some(CompletionOptions::default()),
+                text_document_sync: Some(TextDocumentSyncCapability::Kind(
+                    TextDocumentSyncKind::FULL,
+                )),
+                ..Default::default()
+            },
+            ..Default::default()
+        })
     }
 
     async fn initialized(&self, _: InitializedParams) {
         self.client
-            .log_message(MessageType::INFO, "Rust Custom LSP server initialized!")
+            .log_message(MessageType::INFO, "server initialized!")
             .await;
     }
 
@@ -23,36 +33,56 @@ impl LanguageServer for Backend {
         Ok(())
     }
 
+    async fn completion(&self, _: CompletionParams) -> Result<Option<CompletionResponse>> {
+        Ok(Some(CompletionResponse::Array(vec![
+            CompletionItem::new_simple("Hello".to_string(), "Some detail".to_string()),
+            CompletionItem::new_simple("Bye".to_string(), "More detail".to_string()),
+        ])))
+    }
+
+    async fn hover(&self, _: HoverParams) -> Result<Option<Hover>> {
+        Ok(Some(Hover {
+            contents: HoverContents::Scalar(MarkedString::String("You're hovering!".to_string())),
+            range: None,
+        }))
+    }
+
     async fn did_open(&self, params: DidOpenTextDocumentParams) {
         let uri = params.text_document.uri;
         let text = params.text_document.text;
-
-        // Log the event
-        self.client
-            .log_message(MessageType::INFO, format!("Document opened: {}", uri))
-            .await;
-
-        // Set a range covering the first line
-        let diagnostic = Diagnostic {
-            range: Range {
-                start: Position {
-                    line: 0,
-                    character: 0,
+        if let Some((line, character)) = find_main_function_position(&text) {
+            let diagnostic = Diagnostic {
+                range: Range {
+                    start: Position { line, character },
+                    end: Position {
+                        line,
+                        character: character + 7,
+                    }, // "fn main" is 7 characters long
                 },
-                end: Position {
-                    line: 0,
-                    character: text.lines().next().unwrap_or("").len() as u32,
-                },
-            },
-            severity: Some(DiagnosticSeverity::INFORMATION),
-            message: "Hello from the custom LSP".to_string(),
-            ..Default::default()
-        };
+                severity: Some(DiagnosticSeverity::INFORMATION),
+                code: None,
+                code_description: None,
+                source: Some("Hofmeister LSP".to_string()),
+                message: "Greetings Commander".to_string(),
+                related_information: None,
+                tags: None,
+                data: None,
+            };
 
-        self.client
-            .publish_diagnostics(uri, vec![diagnostic], None)
-            .await;
+            self.client
+                .publish_diagnostics(uri, vec![diagnostic], None)
+                .await;
+        }
     }
+}
+
+fn find_main_function_position(text: &str) -> Option<(u32, u32)> {
+    for (line_number, line) in text.lines().enumerate() {
+        if let Some(character) = line.find("fn main()") {
+            return Some((line_number as u32, character as u32));
+        }
+    }
+    None
 }
 
 #[tokio::main]

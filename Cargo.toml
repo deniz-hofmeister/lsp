@@ -6,3 +6,8 @@ edition = "2021"
 [dependencies]
 tower-lsp = "*"
 tokio = { version = "*", features = ["full"] }
+serde = { version = "*", features = ["derive"] }
+syn = { version = "*", features = ["full", "visit"] }
+serde_json = "*"
+tracing = "*"
+tracing-subscriber = "*"
